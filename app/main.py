@@ -3,12 +3,17 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from app.mcp.server import mcp_router
+from app.tools.registry import registry
 
 from app.config import get_settings
 from app.llm import gateway
 
 settings = get_settings()
 app = FastAPI(title=settings.AGENT_NAME, version=settings.VERSION)
+
+#挂载mcp协议断点
+app.include_router(mcp_router,prefix="/api")
 
 @app.middleware("http")
 async def add_trace(request: Request, call_next):
@@ -36,6 +41,18 @@ async def chat(req: chatRequest):
         scene=req.scene,
     )
     return {"answer": out["content"], "usage": out["usage"]}
+
+@app.get("/api/mcp/health")
+async def mcp_health():
+    return {"status": "ok", "tools_count": len(registry.list_tools())}
+
+@app.get("/api/mcp/tools")
+async def list_tools_debug():
+    """供前端或本地直接查看当前所有工具的 OpenAI / MCP 格式定义"""
+    return {
+        "mcp_format": registry.to_mcp_tools(),
+        "openai_format": registry.to_openai_tools(),
+    }
 
 # SSE预留给P2的ReAct思考链，P0先跑通took透
 @app.post("/api/chat/stream")
